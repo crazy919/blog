@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+ 
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>contenteditable</title>
+  <style>
+    body {
+      background: #e3e3e3;
+    }
+ 
+    .edit-box {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 300px;
+      height: 100px;
+      background: #FFFFFF;
+    }
+ 
+    #inputRef {
+      background: #FFFFFF;
+      width: 300px;
+      height: 100px;
+      overflow-y: auto;
+    }
+ 
+    #inputRef:focus-visible {
+      outline: none;
+    }
+ 
+    .input-placeholder {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      color: #e3e3e3;
+      user-select: none;
+    }
+ 
+    .choose-panel {
+      position: absolute;
+      display: none;
+      left: 0;
+      top: -150px;
+      width: 150px;
+      height: 150px;
+      background: gray;
+      list-style: none;
+    }
+  </style>
+</head>
+ 
+<body>
+  <div class="edit-box">
+    <!-- 输入框 -->
+    <div id="inputRef" contenteditable="true"></div>
+    <!-- 占位符 -->
+    <div id="placeholder" class="input-placeholder">请输入内容</div>
+    <!-- 面板 -->
+    <div id="choosePanel" class="choose-panel">
+      <li>张三</li>
+      <li>李四</li>
+      <li>王武</li>
+      <li>找刘</li>
+      <li>力气</li>
+    </div>
+  </div>
+  <script>
+    const inputRef = document.getElementById('inputRef')
+    const placeholder = document.getElementById('placeholder')
+    const choosePanel = document.getElementById('choosePanel')
+    // 当前光标所在位置相对于startContainer的偏移量
+    let startOffset = 0
+    // 当前光标所在的开始容器
+    let startContainer = null
+    // 控制placeholder是否显示
+    inputRef.onchange = () => {
+      const value = inputRef.value
+      if (value) {
+        placeholder.style.display = 'none'
+      } else {
+        placeholder.style.display = 'block'
+      }
+    }
+    choosePanel.onclick = (e) => {
+      const target = e.target
+      if (target.nodeName === 'LI') {
+        const name = target.innerText
+        // 核心代码如下：span中是选中的人、在span后追加一个不可见字符目的是为了光标紧贴在span后
+        const span = document.createElement('span')
+        span.innerText = ` @ ${name} `
+        span.contentEditable = false
+        const selection = getSelection()
+        const range = selection.getRangeAt(0)
+        range.setStart(startContainer, startOffset - 1)
+        range.setEnd(startContainer, startOffset)
+        range.deleteContents()
+        range.insertNode(span)
+        range.collapse()
+        const textNode = document.createTextNode('\u200B')
+        range.insertNode(textNode)
+        range.setStart(textNode, 1)
+        range.setEnd(textNode, 1)
+        range.collapse()
+        inputRef.focus()
+        choosePanel.style.display = 'none'
+      }
+    }
+    /**
+     * 点击span选中span
+     */
+    inputRef.onclick = (e) => {
+      const target = e.target
+      const selection = getSelection()
+      const range = selection.getRangeAt(0)
+      if (target.nodeName === 'SPAN') {
+        range.selectNode(target)
+      }
+    }
+    /**
+     * 两种删除方式和左右键处理
+     */
+    inputRef.onkeydown = (e) => {
+      switch (e.key) {
+        case 'Delete':
+        case 'Backspace':
+          autoRemoveSelectedName()
+          break;
+        case 'ArrowLeft':
+          moveLeftOrRight(e, 'left')
+          break;
+        case 'ArrowRight':
+          moveLeftOrRight(e, 'right')
+          break;
+        default:
+          break;
+      }
+    }
+    /**
+     * 该函数在光标移动之前触发
+     */
+    const moveLeftOrRight = (e, flag) => {
+      const range = getSelection().getRangeAt(0)
+      const startC = range.startContainer
+      const startO = range.startOffset
+      switch (flag) {
+        case 'left':
+          // 光标处于不可见字符的右侧，左侧为span
+          if (startC.nodeName === '#text' && startC.nodeValue.startsWith('\u200B') && startO === 1 && startC.previousSibling.nodeName === 'SPAN') {
+            e.preventDefault()
+            console.log(startC.previousSibling.previousSibling)
+            range.setStart(startC.previousSibling.previousSibling, 0)
+            range.setEnd(startC.previousSibling.previousSibling, startC.previousSibling.previousSibling.nodeValue.length || 0)
+            range.collapse()
+          }
+          break;
+        case 'right':
+          // 光标处于span左侧文本节点的末尾
+          if (startC.nodeName === '#text' && startC.nodeValue.length === startO && startC.nextSibling.nodeName === 'SPAN') {
+            e.preventDefault()
+            range.setStart(startC.nextSibling.nextSibling, 1)
+            range.setEnd(startC.nextSibling.nextSibling, 1)
+            range.collapse()
+          }
+          break;
+        default:
+          break;
+      }
+    }
+ 
+    inputRef.oninput = () => {
+      autoRemoveSelectedName()
+      placeholder.style.display = inputRef.innerHTML ? 'none' : 'block'
+      const selection = getSelection()
+      const range = selection.getRangeAt(0)
+      startContainer = range.startContainer
+      if (startContainer.nodeName === '#text') {
+        const value = startContainer.nodeValue
+        startOffset = range.startOffset
+        // 根据光标偏移量判断前一个字符是否为@
+        if (value.charAt(startOffset - 1) === '@') {
+          choosePanel.style.display = 'block'
+        } else {
+          choosePanel.style.display = 'none'
+        }
+      }
+    }
+ 
+    const autoRemoveSelectedName = () => {
+      const children = inputRef.childNodes
+      children.forEach(child => {
+        // 根据span的不可见字符的关系，当删除span后面不可见字符时删除span
+        if (child.nodeName === 'SPAN' && child.nextSibling.nodeName === '#text' && !child.nextSibling.nodeValue.startsWith('\u200B')) {
+          child.remove()
+        }
+        // 当删除span后，同时移除不可见字符
+        if (child.nodeName === '#text' && child.nodeValue.startsWith('\u200B') && child.previousSibling.nodeName !== 'SPAN') {
+          child.nodeValue = child.nodeValue.substring(1)
+        }
+      })
+    }
+  </script>
+</body>
+ 
+</html>
